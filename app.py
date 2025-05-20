@@ -2,70 +2,68 @@ import streamlit as st
 import pandas as pd
 import os
 
+# --- Helper Functions ---
 def calculate_average(grades):
     if not grades:
         return 0
-    else:
-        s = sum(grades)
-        avg = s / len(grades)
-        return avg
-    
-def assign_letter_grade(avg):
+    return sum(grades) / len(grades)
+
+def assign_letter_grade(average):
     letter = 'F'
-    if avg >= 60:
+    if average >= 60:
         letter = 'D'
-    if avg >= 70:
+    if average >= 70:
         letter = 'C'
-    if avg >= 80:
+    if average >= 80:
         letter = 'B'
-    if avg >= 90:
+    if average >= 90:
         letter = 'A'
-    
     return letter
 
 def save_student_data(student_data, file_path):
-    """
-    write the code that gets the student data dictionary as the row to append to file.
-    don't forget to handle the case if file_path doesn't exist.
-    """
-    df = pd.DataFrame([student_data])
+    df = pd.DataFrame(student_data)
     file_exists = os.path.isfile(file_path)
     if not file_exists:
         df.to_csv(file_path, index=False)
     else:
-        df.to_csv(file_path, mode = 'a', header=False, index=False)
+        df.to_csv(file_path, mode='a', index=False, header=False)
 
-    st.write("Student added successfully!")
+def modify_student_data(student_name, new_grades, file_path):
+    if not os.path.isfile(file_path):
+        return False, "Student database not found."
+
+    df = pd.read_csv(file_path)
+    if student_name in df['Name'].values:
+        avg = calculate_average(new_grades)
+        letter = assign_letter_grade(avg)
+        df.loc[df['Name'] == student_name, 'Grades'] = str(new_grades)
+        df.loc[df['Name'] == student_name, 'Average'] = avg
+        df.loc[df['Name'] == student_name, 'Letter Grade'] = letter
+        df.to_csv(file_path, index=False)
+        return True, f"Student {student_name}'s grades have been updated."
+    else:
+        return False, f"No student found with the name {student_name}."
 
 def list_students(file_path):
-    """
-    write the code to print the corresponding students information from the csv file.
-    if the data file exists,  it prints:
-    Student Information:
-       Name           Grades  Average Letter Grade
-    0   s1  [4.0, 6.0, 8.0]        6            F
-
-    if file doesn't exist, it prints:
-    No data available. The student database is empty.
-    """
-    try:
+    if os.path.isfile(file_path):
         df = pd.read_csv(file_path)
-        st.subheader("Students full list")
+        st.subheader("Student Information:")
         st.dataframe(df)
-    except FileNotFoundError:
-        st.warning("No data available!")
+    else:
+        st.warning("No data available. The student database is empty.")
 
-st.title("Student Grade Manager")
+# --- Streamlit App ---
+st.title("🎓 Student Grade Manager")
 file_path = "students_grades.csv"
 
-option  = st.sidebar.radio("Choose an action:",
-                           (
-                              "Add a new student",
-                              "Modify a student's grades",
-                              "List all students" 
-                           )
-                           )
+# Sidebar for navigation
+option = st.sidebar.radio("Choose an action:", (
+    "Add a new student", 
+    "Modify a student's grades", 
+    "List all students")
+)
 
+# Initialize session state for subject count
 if 'num_subjects' not in st.session_state:
     st.session_state.num_subjects = 1
 
@@ -85,44 +83,154 @@ if option == "Add a new student" or option == "Modify a student's grades":
         # Force rerun to update the UI with new number of grade fields
         st.rerun()
 
+# Option 1: Add new student
 if option == "Add a new student":
     with st.form("add_student_form"):
-        # Get student name
         student_name = st.text_input("Enter the student's name:")
-
-        st.write(f"Number of subejcts: {st.session_state.num_subjects}")
+        
+        # Display the currently selected number of subjects (readonly)
+        st.write(f"Number of subjects: {st.session_state.num_subjects}")
+        
+        # Dynamically create grade inputs based on session state
         grades = []
-        for i in range(1, st.session_state.num_subjects + 1):
+        for i in range(st.session_state.num_subjects):
             grade = st.number_input(
-                f"Enter the grade for subject {i}",
-                min_value=0,
-                step = 1,
-                key = f"add_grade_{i}"
+                f"Enter grade for subject {i+1}:", 
+                min_value=0.0, 
+                step=1.0,
+                key=f"add_grade_{i}"
             )
             grades.append(grade)
-
+        
         submitted = st.form_submit_button("Submit")
 
-        if submitted:
-            if not student_name:
-                st.error("Enter student name")
+    if submitted:
+        if not student_name:
+            st.error("Please enter a student name.")
+        elif len(grades) != st.session_state.num_subjects:
+            st.error(f"Please ensure you've entered all {st.session_state.num_subjects} grades.")
+        else:
+            avg = calculate_average(grades)
+            letter = assign_letter_grade(avg)
+            student = {
+                'Name': [student_name],
+                'Grades': [str(grades)],
+                'Average': [avg],
+                'Letter Grade': [letter]
+            }
+            save_student_data(student, file_path)
+            st.success(f"Student {student_name} added successfully!")
 
-            elif len(grades) != st.session_state.num_subjects:
-                st.error("Enter all grades!")
+# # Option 2: Modify student's grades
+# elif option == "Modify a student's grades":
+#     with st.form("modify_student_form"):
+#         # student_name = st.text_input("Enter the student's name to modify:")
+#         if os.path.isfile(file_path):
+#             df = pd.read_csv(file_path)
+#             student_names = df['Name'].unique().tolist()
+#             student_name = st.selectbox("Select a student to modify:", student_names)
+#         else:
+#             st.warning("No student data found.")
+#             student_name = None
+        
+#         # Display the currently selected number of subjects (readonly)
+#         st.write(f"Number of subjects: {st.session_state.num_subjects}")
+        
+#         # Dynamically create grade inputs based on session state
+#         new_grades = []
+#         for i in range(st.session_state.num_subjects):
+#             grade = st.number_input(
+#                 f"Enter grade for subject {i+1}:", 
+#                 min_value=0.0, 
+#                 step=1.0,
+#                 key=f"mod_grade_{i}"
+#             )
+#             new_grades.append(grade)
+        
+#         submitted = st.form_submit_button("Submit Changes")
 
-            else:
-                avg = calculate_average(grades)
-                letter = assign_letter_grade(avg)
-                student = {
-                    'Name': student_name,
-                    'Grades': grades,
-                    'Average': avg,
-                    'Letter Grade': letter
-                }
-                save_student_data(student, file_path)
+#     if submitted:
+#         if not student_name:
+#             st.error("Please enter a student name.")
+#         elif len(new_grades) != st.session_state.num_subjects:
+#             st.error(f"Please ensure you've entered all {st.session_state.num_subjects} grades.")
+#         else:
+#             success, message = modify_student_data(student_name, new_grades, file_path)
+#             if success:
+#                 st.success(message)
+#             else:
+#                 st.error(message)
 
-if option == "Modify a student's grades":
-    st.write("page: Modify a student's grades was chosen")
+elif option == "Modify a student's grades":
 
-if option == "List all students":
+    def update_subject_count():
+        selected_name = st.session_state.get("selected_student_name")
+        if selected_name and os.path.isfile(file_path):
+            df = pd.read_csv(file_path)
+            student_row = df[df['Name'] == selected_name]
+            if not student_row.empty:
+                try:
+                    grades = eval(student_row.iloc[0]['Grades'])
+                    st.session_state.num_subjects = len(grades)
+                except:
+                    st.session_state.num_subjects = 1
+
+    # 🔷 Step 1: Student selector OUTSIDE the form so we can use on_change
+    if os.path.isfile(file_path):
+        df = pd.read_csv(file_path)
+        student_names = df['Name'].unique().tolist()
+
+        st.selectbox(
+            "Select a student to modify:",
+            student_names,
+            key="selected_student_name",
+            on_change=update_subject_count
+        )
+        student_name = st.session_state.get("selected_student_name")
+    else:
+        st.warning("No student data found.")
+        student_name = None
+
+    # 🔷 Step 2: Form starts here
+    with st.form("modify_student_form"):
+        if student_name:
+            # Load and parse the student's current grades
+            student_row = df[df['Name'] == student_name].iloc[0]
+            try:
+                prefilled_grades = eval(student_row['Grades'])
+                if len(prefilled_grades) < st.session_state.num_subjects:
+                    prefilled_grades += [0.0] * (st.session_state.num_subjects - len(prefilled_grades))
+                elif len(prefilled_grades) > st.session_state.num_subjects:
+                    prefilled_grades = prefilled_grades[:st.session_state.num_subjects]
+            except Exception:
+                prefilled_grades = [0.0] * st.session_state.num_subjects
+
+            st.write(f"Number of subjects: {st.session_state.num_subjects}")
+            new_grades = []
+            for i in range(st.session_state.num_subjects):
+                grade = st.number_input(
+                    f"Enter grade for subject {i+1}:",
+                    min_value=0.0,
+                    step=1.0,
+                    value=prefilled_grades[i],
+                    key=f"mod_grade_{i}"
+                )
+                new_grades.append(grade)
+
+            submitted = st.form_submit_button("Submit Changes")
+
+            if submitted:
+                if len(new_grades) != st.session_state.num_subjects:
+                    st.error(f"Please enter all {st.session_state.num_subjects} grades.")
+                else:
+                    success, message = modify_student_data(student_name, new_grades, file_path)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+
+
+
+# Option 3: List students
+elif option == "List all students":
     list_students(file_path)
